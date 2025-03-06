@@ -1,0 +1,232 @@
+esphome:
+  name: "esphome-emerson-ttgo"
+  friendly_name: Emerson_Vertiv_R48_TTGO
+
+external_components:
+  - source: github://leodesigner/esphome-emerson-vertiv-r48
+#    refresh: 0s
+
+esp8266:
+  board: esp32dev
+
+# Enable logging
+logger:
+#  level: DEBUG
+#  logs:
+#    canbus: INFO
+
+# Enable Home Assistant API
+#api:
+
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Esphome-Emerson"
+    password: "qwertyzxc"
+
+ota:
+  password: !secret ota_password
+
+#web_server:
+captive_portal:
+
+mqtt:
+  broker: !secret mqtt_host
+  #username: !secret mqtt_username
+  #password: !secret mqtt_password
+  id: mqtt_client
+  topic_prefix: eh/emerson
+
+
+spi:
+  - id: DispSpi
+    clk_pin: GPIO18
+    mosi_pin: GPIO19
+  - id: McpSpi
+    clk_pin: GPIO25
+    miso_pin: GPIO27
+    mosi_pin: GPIO26
+
+canbus:
+  - platform: mcp2515
+    id: can
+    spi_id: McpSpi
+    use_extended_id: true
+    cs_pin: GPIO33
+    can_id: 0x0607FF83
+    bit_rate: 125kbps
+    mode: NORMAL
+    data_rate: 10Mhz
+
+emerson_r48:
+  canbus_id: can
+  update_interval: 1s
+
+
+sensor:
+  - platform: emerson_r48
+    input_voltage:
+      name: AC Voltage
+      id: ac_voltage
+    output_voltage:
+      name: DC voltage
+      id: output_voltage
+    output_current:
+      name: DC current
+      id: output_current
+    max_output_current:
+      name: Max DC current
+      id: max_output_current
+    output_temp:
+      name: DC Temperature
+      id: dc_temperature
+
+number:
+  - platform: emerson_r48
+    output_voltage:
+      name: Set output voltage
+      id: max_output_voltage
+    max_output_current:
+      name: Max output current
+    max_input_current:
+      name: Max input current
+
+button:
+  - platform: emerson_r48
+    set_offline_values:
+      name: Set offline values
+  - platform: restart
+    name: "Restart ESP"
+
+switch:
+  - platform: emerson_r48
+    ac_sw:
+      name: "AC switch Turn OFF"
+      id: ac_sw
+    dc_sw:
+      name: "DC switch Turn OFF"
+      id: dc_sw
+    fan_sw:
+      name: "FAN switch MAX"
+    led_sw:
+      name: "LED switch"
+      id: led_sw
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO35
+      inverted: true
+    id: tdisplay_button_input_1
+    on_click:
+      then:
+        - switch.toggle: ac_sw
+  - platform: gpio
+    pin:
+      number: GPIO0
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    id: tdisplay_button_input_0
+    on_click:
+      then:
+        - switch.toggle: led_sw
+  - platform: status
+    name: "Node Status"
+    id: system_status              
+
+color:
+  - id: color_red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: color_yellow
+    red: 100%
+    green: 100%
+    blue: 0%
+  - id: color_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: color_blue
+    red: 0%
+    green: 0%
+    blue: 100%
+  - id: color_gray
+    red: 75%
+    green: 75%
+    blue: 75%
+
+font:
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 200
+    id: roboto_12
+    size: 12
+  - file:
+      type: gfonts
+      family: Roboto+Condensed
+      #family: Saira+Extra+Condensed
+      weight: 200
+    id: roboto_20
+    size: 20
+  - file:
+      type: gfonts
+      family: Roboto+Condensed
+      #family: Saira+Extra+Condensed
+      weight: 500
+    id: roboto_38
+    size: 38
+
+display:
+  - platform: st7789v
+    spi_id: DispSpi
+    model: TTGO TDisplay 135x240
+    backlight_pin: GPIO4
+    cs_pin: GPIO5
+    dc_pin: GPIO16
+    reset_pin: GPIO23
+    rotation: 270°
+    #brightness: 0.5
+    update_interval: 1s
+    lambda: |-
+      it.rectangle(0,  0, it.get_width(), it.get_height(), id(color_blue));
+      it.rectangle(0, 20, it.get_width(), it.get_height(), id(color_blue));   // header bar
+
+      it.print(5, 5, id(roboto_12), id(color_yellow), TextAlign::TOP_LEFT, "R48 PSU");
+      if (id(system_status).state) {
+        it.print(235, 5, id(roboto_12), id(color_green), TextAlign::TOP_RIGHT, "Online");
+      }
+      else {
+        it.print(235, 5, id(roboto_12), id(color_red), TextAlign::TOP_RIGHT, "Offline");
+      }
+
+      // Left screen
+      it.printf(2, (140 / 4) * 0 + 21, id(roboto_38), id(color_green), TextAlign::LEFT, "%05.2f V", id(output_voltage).state);
+      it.printf(2, (140 / 4) * 1 + 21, id(roboto_38), id(color_yellow), TextAlign::LEFT, "%05.2f A", id(output_current).state);
+      it.printf(2, (140 / 4) * 2 + 21, id(roboto_38), id(color_red), TextAlign::LEFT, "%04.0f W", id(output_voltage).state * id(output_current).state);
+      
+      // Right screen
+      it.printf(235, (140 / 7) * 0 + 21, id(roboto_20), id(color_gray), TextAlign::TOP_RIGHT, "AC: %05.1f V", id(ac_voltage).state);
+      it.printf(235, (140 / 7) * 1 + 21, id(roboto_20), id(color_blue), TextAlign::TOP_RIGHT, "T:  %03.1f °C", id(dc_temperature).state);
+      it.printf(235, (140 / 7) * 2 + 21, id(roboto_20), id(color_green), TextAlign::TOP_RIGHT, "> MV:   %04.1f V", id(max_output_voltage).state);
+      it.printf(235, (140 / 7) * 3 + 21, id(roboto_20), id(color_yellow), TextAlign::TOP_RIGHT, "MA:   %04.1f A", id(max_output_current).state);
+
+      if (id(ac_sw).state) {
+        it.print(182, (144 / 7) * 4 + 30, id(roboto_20), id(color_red), TextAlign::TOP_RIGHT, "[ AC ]");
+      }
+      else {
+        it.print(182, (144 / 7) * 4 + 30, id(roboto_20), id(color_green), TextAlign::TOP_RIGHT, "[ AC ]");
+      }
+      if (id(dc_sw).state) {
+        it.print(235, (140 / 7) * 4 + 30, id(roboto_20), id(color_red), TextAlign::TOP_RIGHT, "[ DC ]");
+      }
+      else {
+        it.print(235, (140 / 7) * 4 + 30, id(roboto_20), id(color_green), TextAlign::TOP_RIGHT, "[ DC ]");
+      }
